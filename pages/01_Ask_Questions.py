@@ -59,6 +59,14 @@ def render_answer_card(result: dict, query: str, rank: int, total_docs: int):
     bullets   = extract_bullets(raw_text, max_bullets=3)
     hl_text   = highlight(raw_text, query, max_chars=400)
 
+    # Fallback: always show a plain English intro if no template matched
+    if not plain_ans and is_best:
+        plain_ans = (
+            "Your document has information about this topic in the "
+            + section + " section (Page " + str(page_num) + "). "
+            "The key points from that section are shown below."
+        )
+
     # ── Doc badge (only when multiple docs loaded) ────────────────────────────
     doc_badge = ""
     if total_docs > 1 and doc_name:
@@ -281,6 +289,7 @@ with right:
             st.session_state.search_results = []
             st.session_state.active_q       = ""
             st.session_state.history        = []
+            st.session_state.free_query     = ""
             st.rerun()
 
     if search_btn and query.strip():
