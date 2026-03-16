@@ -27,8 +27,8 @@ if not st.session_state.pdf_loaded:
     st.stop()
 
 questions = st.session_state.pdf_questions
-chunks    = st.session_state.pdf_chunks
-sections  = st.session_state.pdf_sections
+chunks    = st.session_state.get("all_chunks", [])
+sections  = []
 
 # ── Category color map ────────────────────────────────────────────────────────
 CAT_COLORS = {
