@@ -199,7 +199,7 @@ if st.session_state.flow_step:
         for q in step["questions"]:
             if st.button(q, key=f"stepq_{q[:20]}", use_container_width=True):
                 if st.session_state.pdf_loaded:
-                    results = search_chunks(st.session_state.pdf_chunks, q, top_k=3)
+                    results = search_chunks([], q, top_k=3)
                     st.session_state.step_results     = results
                     st.session_state.step_active_q    = q
                 else:
@@ -217,7 +217,7 @@ if st.session_state.flow_step:
             # Auto-search for this step's content
             if f"step_results_{step['id']}" not in st.session_state:
                 results = search_chunks(
-                    st.session_state.pdf_chunks, step["query"], top_k=3
+                    [], step["query"], top_k=3
                 )
                 st.session_state[f"step_results_{step['id']}"] = results
 
