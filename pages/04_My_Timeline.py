@@ -281,7 +281,7 @@ if is_overdue and st.session_state.pdf_loaded:
     </div>
     """, unsafe_allow_html=True)
     results = search_chunks(
-        st.session_state.pdf_chunks,
+        [],
         "timeline violation complaint due process parent rights",
         top_k=2
     )
