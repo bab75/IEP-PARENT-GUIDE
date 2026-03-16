@@ -160,14 +160,104 @@ def extract_pdf(file_obj) -> dict:
 
 
 def detect_sections(pages: dict) -> list:
+    """
+    Multi-strategy heading detector for NYC DOE SOPM and similar PDFs.
+    Detects: ALL CAPS, numbered sections, title case, colon-ending,
+    page headers, and lines isolated by blank lines.
+    """
+    import re as _re
+    from collections import defaultdict
+
     headings = []
-    pattern  = re.compile(r'^([A-Z][A-Z\s\-\/\(\)]{4,80})$|^(\d+[\.\)]\s+[A-Z][A-Z\s]{3,60})$')
+    seen     = set()
+
+    ALL_CAPS   = _re.compile(r'^[A-Z][A-Z\s\-\/\(\)&]{4,79}$')
+    NUMBERED   = _re.compile(r'^(Section\s+\d+[\s:\-]|SECTION\s+\d+|\d{1,2}[\.\)]\s+)[A-Za-z].{3,70}$')
+    TITLE_CASE = _re.compile(r'^([A-Z][a-z]+(\s+[A-Z][a-z]*){1,8})$')
+    ENDS_COLON = _re.compile(r'^[A-Z][A-Za-z\s\-\/\(\)]{4,70}:$')
+    PAGE_HDR   = _re.compile(r'^\d+\s*[|\-]\s*.{5,60}$')
+    SKIP       = _re.compile(
+        r'^\d+$'
+        r'|^(Table of Contents|Page \d)'
+        r'|^(http|www\.)'
+        r'|^\d{1,2}\/\d{1,2}'
+    )
+
+    IEP_KEYWORDS = [
+        "referral", "consent", "evaluat", "eligib", "classif",
+        "iep", "meeting", "placement", "service", "goal", "annual",
+        "review", "reevaluat", "amend", "right", "notice", "transition",
+        "behavior", "discipline", "transport", "preschool", "surrogate",
+        "mediat", "complaint", "due process", "record", "section",
+        "overview", "introduction", "general information", "terms",
+        "least restrict", "lre", "fape", "idea", "procedural",
+        "social histor", "assistive", "extended school", "paraprofessional",
+    ]
+
     for page_num, text in pages.items():
-        for line in text.split("\n"):
-            line = line.strip()
-            if 5 <= len(line) <= 90 and pattern.match(line):
-                headings.append({"page": page_num, "heading": line, "heading_lower": line.lower()})
-    return headings
+        lines = text.split("\n")
+        n     = len(lines)
+
+        for i, raw_line in enumerate(lines):
+            line = raw_line.strip()
+            if not line or len(line) < 5 or len(line) > 85:
+                continue
+            if SKIP.search(line):
+                continue
+            alpha_ratio = sum(c.isalpha() for c in line) / len(line)
+            if alpha_ratio < 0.5:
+                continue
+
+            ll         = line.lower()
+            is_heading = False
+            confidence = 0
+
+            if ALL_CAPS.match(line):
+                is_heading, confidence = True, 90
+            elif NUMBERED.match(line):
+                is_heading, confidence = True, 85
+            elif ENDS_COLON.match(line):
+                is_heading, confidence = True, 75
+            elif PAGE_HDR.match(line):
+                is_heading, confidence = True, 60
+            elif 6 <= len(line) <= 75:
+                prev_blank = (i == 0) or (lines[i-1].strip() == '')
+                next_blank = (i >= n-1) or (lines[i+1].strip() == '')
+                if prev_blank and next_blank:
+                    is_heading, confidence = True, 55
+            elif TITLE_CASE.match(line) and len(line.split()) >= 2:
+                is_heading, confidence = True, 50
+
+            if not is_heading:
+                continue
+
+            if any(kw in ll for kw in IEP_KEYWORDS):
+                confidence += 20
+
+            if confidence < 55:
+                continue
+
+            key = (page_num, ll[:40])
+            if key in seen:
+                continue
+            seen.add(key)
+
+            headings.append({
+                "page":          page_num,
+                "heading":       line,
+                "heading_lower": ll,
+                "confidence":    confidence,
+            })
+
+    headings.sort(key=lambda h: (h['page'], -h['confidence']))
+
+    per_page: dict = defaultdict(list)
+    for h in headings:
+        per_page[h['page']].append(h)
+    result = []
+    for pg in sorted(per_page.keys()):
+        result.extend(per_page[pg][:3])
+    return result
 
 
 def assign_category(text_lower: str) -> str:
