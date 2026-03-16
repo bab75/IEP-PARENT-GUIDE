@@ -381,12 +381,12 @@ with right:
             Previous questions this session
         </div>
         """, unsafe_allow_html=True)
-        for entry in history[1:6]:
+        for hi, entry in enumerate(history[1:6]):
             pgs    = sorted({r["page"] for r in entry["results"]}) if entry["results"] else []
             pg_str = f"Pages: {', '.join(str(p) for p in pgs)}" if pgs else "No results"
             if st.button(
                 f"{entry['question']}  ·  {pg_str}",
-                key=f"hist_{entry['question'][:22]}",
+                key=f"hist_{hi}_{entry['question'][:15]}",
                 use_container_width=True,
             ):
                 st.session_state.active_q       = entry["question"]
