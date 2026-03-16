@@ -42,104 +42,118 @@ loaded_docs = list(st.session_state.docs.keys())
 # RICH ANSWER CARD
 # ────────────────────────────────────────────────────────────────────────────
 def render_answer_card(result: dict, query: str, rank: int, total_docs: int):
-    """
-    Render one search result as a structured card:
-    badge row → plain answer → key bullets → action line → raw text toggle
-    """
-    doc_name   = result.get("doc_name", "")
-    page_num   = result["page"]
-    section    = result["section"]
-    category   = result["category"]
-    raw_text   = result["text"]
+    """Structured answer card — no nested quotes in f-strings."""
+    doc_name  = result.get("doc_name", "")
+    page_num  = result["page"]
+    section   = result["section"]
+    sec_short = section[:45] + ("…" if len(section) > 45 else "")
+    category  = result["category"]
+    raw_text  = result["text"]
+    is_best   = (rank == 1)
+    star      = "⭐ Best Match" if is_best else "Match " + str(rank)
+    border    = "2px solid #2563EB" if is_best else "1px solid #E2E8F0"
+    bg        = "#EFF6FF" if is_best else "white"
 
-    is_best    = (rank == 1)
-    border_col = "#2563EB" if is_best else "#E2E8F0"
-    bg_col     = "#EFF6FF" if is_best else "white"
-    star       = "⭐ Best Match" if is_best else f"Match {rank}"
+    plain_ans = get_plain_answer(query)
+    action    = get_action_line(query)
+    bullets   = extract_bullets(raw_text, max_bullets=3)
+    hl_text   = highlight(raw_text, query, max_chars=400)
 
-    plain_ans  = get_plain_answer(query)
-    action     = get_action_line(query)
-    bullets    = extract_bullets(raw_text, max_bullets=3)
-    hl_text    = highlight(raw_text, query, max_chars=400)
+    # ── Doc badge (only when multiple docs loaded) ────────────────────────────
+    doc_badge = ""
+    if total_docs > 1 and doc_name:
+        doc_badge = (
+            '<span style="background:#FEE2E2;color:#991B1B;border-radius:8px;'
+            'padding:3px 10px;font-size:11px;font-weight:700;">📂 '
+            + doc_name + "</span>"
+        )
 
-    # ── Card wrapper ──────────────────────────────────────────────────────────
-    st.markdown(f"""
-    <div style="background:{bg_col};border:{'2px' if is_best else '1px'} solid {border_col};
-                border-radius:14px;padding:18px 22px;margin-bottom:14px;">
+    # ── Badge row HTML ────────────────────────────────────────────────────────
+    badge_row = (
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;'
+        'align-items:center;margin-bottom:14px;">'
+        + '<span style="background:#FEF9C3;color:#854D0E;border-radius:8px;'
+        'padding:3px 10px;font-size:11px;font-weight:700;">' + star + "</span>"
+        + '<span style="background:#DBEAFE;color:#1E40AF;border-radius:8px;'
+        'padding:3px 10px;font-size:11px;font-weight:700;">📄 Page '
+        + str(page_num) + "</span>"
+        + '<span style="background:#D1FAE5;color:#065F46;border-radius:8px;'
+        'padding:3px 10px;font-size:11px;font-weight:700;">'
+        + sec_short + "</span>"
+        + '<span style="background:#EDE9FE;color:#5B21B6;border-radius:8px;'
+        'padding:3px 10px;font-size:11px;font-weight:700;">'
+        + category + "</span>"
+        + doc_badge
+        + "</div>"
+    )
 
-        <!-- Badge row -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
-            <span style="background:#FEF9C3;color:#854D0E;border-radius:8px;
-                         padding:3px 10px;font-size:11px;font-weight:700;">{star}</span>
-            <span style="background:#DBEAFE;color:#1E40AF;border-radius:8px;
-                         padding:3px 10px;font-size:11px;font-weight:700;">
-                📄 Page {page_num}</span>
-            <span style="background:#D1FAE5;color:#065F46;border-radius:8px;
-                         padding:3px 10px;font-size:11px;font-weight:700;">
-                {section[:45]}{"…" if len(section)>45 else ""}</span>
-            <span style="background:#EDE9FE;color:#5B21B6;border-radius:8px;
-                         padding:3px 10px;font-size:11px;font-weight:700;">
-                {category}</span>
-            {f'<span style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;">📂 {doc_name}</span>' if total_docs > 1 else ''}
-        </div>
-    """, unsafe_allow_html=True)
-
-    # ── Plain English answer (only on best match or when unique per doc) ──────
+    # ── Plain English block ───────────────────────────────────────────────────
+    plain_block = ""
     if plain_ans and (is_best or total_docs > 1):
-        st.markdown(f"""
-        <div style="background:#EFF6FF;border-radius:10px;padding:13px 16px;margin-bottom:12px;">
-            <div style="font-size:11px;font-weight:700;color:#1E40AF;text-transform:uppercase;
-                        letter-spacing:.05em;margin-bottom:6px;">Plain English Answer</div>
-            <div style="font-size:0.93rem;color:#1E3A8A;line-height:1.75;font-weight:500;">
-                {plain_ans}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        plain_block = (
+            '<div style="background:#EFF6FF;border-radius:10px;'
+            'padding:13px 16px;margin-bottom:12px;">'
+            '<div style="font-size:11px;font-weight:700;color:#1E40AF;'
+            'text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">'
+            "Plain English Answer</div>"
+            '<div style="font-size:0.93rem;color:#1E3A8A;line-height:1.75;font-weight:500;">'
+            + plain_ans + "</div></div>"
+        )
 
-    # ── Key bullet points from the PDF passage ────────────────────────────────
+    # ── Bullet points ─────────────────────────────────────────────────────────
+    bullets_block = ""
     if bullets:
-        bullet_html = "".join(f"""
-        <li style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;
-                   border-bottom:1px solid #E2E8F0;font-size:0.88rem;
-                   color:#374151;line-height:1.65;">
-            <span style="width:7px;height:7px;border-radius:50%;background:#3B82F6;
-                         flex-shrink:0;margin-top:6px;"></span>
-            <span>{b}</span>
-        </li>""" for b in bullets)
-        st.markdown(f"""
-        <div style="margin-bottom:12px;">
-            <div style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;
-                        letter-spacing:.05em;margin-bottom:6px;">Key Points from Your Document</div>
-            <ul style="list-style:none;padding:0;margin:0;border-top:1px solid #E2E8F0;">
-                {bullet_html}
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        items = "".join(
+            '<li style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;'
+            'border-bottom:1px solid #E2E8F0;font-size:0.88rem;color:#374151;line-height:1.65;">'
+            '<span style="width:7px;height:7px;border-radius:50%;background:#3B82F6;'
+            'flex-shrink:0;margin-top:6px;"></span>'
+            "<span>" + b + "</span></li>"
+            for b in bullets
+        )
+        bullets_block = (
+            '<div style="margin-bottom:12px;">'
+            '<div style="font-size:11px;font-weight:700;color:#374151;'
+            'text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">'
+            "Key Points from Your Document</div>"
+            '<ul style="list-style:none;padding:0;margin:0;border-top:1px solid #E2E8F0;">'
+            + items + "</ul></div>"
+        )
 
     # ── Action line ───────────────────────────────────────────────────────────
+    action_block = ""
     if action and is_best:
-        st.markdown(f"""
-        <div style="background:#F0FDF4;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
-            <div style="font-size:11px;font-weight:700;color:#15803D;text-transform:uppercase;
-                        letter-spacing:.05em;margin-bottom:4px;">What This Means for You</div>
-            <div style="font-size:0.88rem;color:#166534;font-weight:600;line-height:1.65;">
-                ✅ {action}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        action_block = (
+            '<div style="background:#F0FDF4;border-radius:8px;'
+            'padding:10px 14px;margin-bottom:12px;">'
+            '<div style="font-size:11px;font-weight:700;color:#15803D;'
+            'text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">'
+            "What This Means for You</div>"
+            '<div style="font-size:0.88rem;color:#166534;font-weight:600;line-height:1.65;">'
+            "✅ " + action + "</div></div>"
+        )
 
-    # ── Raw text — collapsed by default ──────────────────────────────────────
-    st.markdown("</div>", unsafe_allow_html=True)  # close card div
+    # ── Assemble and render card ──────────────────────────────────────────────
+    card_html = (
+        '<div style="background:' + bg + ';border:' + border + ';'
+        + 'border-radius:14px;padding:18px 22px;margin-bottom:14px;">'
+        + badge_row
+        + plain_block
+        + bullets_block
+        + action_block
+        + "</div>"
+    )
+    st.markdown(card_html, unsafe_allow_html=True)
 
-    with st.expander(f"Show exact text from document — Page {page_num}"):
-        st.markdown(f"""
-        <div style="background:#F8FAFF;border-left:3px solid #93C5FD;border-radius:6px;
-                    padding:14px 16px;font-size:0.85rem;line-height:1.85;color:#334155;">
-            {hl_text}
-        </div>
-        """, unsafe_allow_html=True)
+    # ── Raw text expander ─────────────────────────────────────────────────────
+    with st.expander("Show exact text from document - Page " + str(page_num)):
+        raw_html = (
+            '<div style="background:#F8FAFF;border-left:3px solid #93C5FD;'
+            + 'border-radius:6px;padding:14px 16px;font-size:0.85rem;'
+            + 'line-height:1.85;color:#334155;">' + hl_text + "</div>"
+        )
+        st.markdown(raw_html, unsafe_allow_html=True)
 
-
-# ── Layout ────────────────────────────────────────────────────────────────────
-left, right = st.columns([1, 2], gap="large")
 
 # ════════════════════════════════════════════════════════════════════════════
 # LEFT — document status + question list + clear button
