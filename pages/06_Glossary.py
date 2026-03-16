@@ -181,7 +181,7 @@ for cat in display_cats:
                 if st.button(f"Find '{abbr}' in my document",
                               key=f"gl_{abbr[:10]}_{i}", use_container_width=True):
                     results = search_chunks(
-                        st.session_state.pdf_chunks, f"{abbr} {full}", top_k=1
+                        [], f"{abbr} {full}", top_k=1
                     )
                     st.session_state[f"gl_result_{abbr}"] = results
 
