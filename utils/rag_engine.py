@@ -161,103 +161,115 @@ def extract_pdf(file_obj) -> dict:
 
 def detect_sections(pages: dict) -> list:
     """
-    Multi-strategy heading detector for NYC DOE SOPM and similar PDFs.
-    Detects: ALL CAPS, numbered sections, title case, colon-ending,
-    page headers, and lines isolated by blank lines.
+    Section detector tuned for NYC DOE SOPM PDF format.
+    Strategy:
+      1. Extract the Table of Contents (pages 2-5) to build a lookup set.
+      2. Scan every body page for lines that exactly match a TOC entry.
+      3. Fallback: ALL CAPS lines and short isolated lines with ratio >= 4.0.
     """
     import re as _re
     from collections import defaultdict
 
-    headings = []
-    seen     = set()
+    # ── Step 1: build TOC lookup from early pages ─────────────────────────
+    toc_entries: set = set()
+    SKIP_TOC = _re.compile(
+        r"^Table of Contents"
+        r"|^click on"
+        r"|\d+\s*\|\s*NYC DOE"
+        r"|^(As of |Last Updated|check this page)"
+    )
+    for pg in range(1, min(6, max(pages.keys()) + 1)):
+        for line in pages.get(pg, "").split("\n"):
+            s = line.strip()
+            if not s or len(s) < 6 or len(s) > 85:
+                continue
+            if SKIP_TOC.search(s):
+                continue
+            alpha = sum(c.isalpha() for c in s) / len(s)
+            if alpha < 0.70:
+                continue
+            toc_entries.add(s.lower().strip())
 
-    ALL_CAPS   = _re.compile(r'^[A-Z][A-Z\s\-\/\(\)&]{4,79}$')
-    NUMBERED   = _re.compile(r'^(Section\s+\d+[\s:\-]|SECTION\s+\d+|\d{1,2}[\.\)]\s+)[A-Za-z].{3,70}$')
-    TITLE_CASE = _re.compile(r'^([A-Z][a-z]+(\s+[A-Z][a-z]*){1,8})$')
-    ENDS_COLON = _re.compile(r'^[A-Z][A-Za-z\s\-\/\(\)]{4,70}:$')
-    PAGE_HDR   = _re.compile(r'^\d+\s*[|\-]\s*.{5,60}$')
-    SKIP       = _re.compile(
-        r'^\d+$'
-        r'|^(Table of Contents|Page \d)'
-        r'|^(http|www\.)'
-        r'|^\d{1,2}\/\d{1,2}'
+    # ── Step 2: scan body pages for TOC matches ───────────────────────────
+    headings  = []
+    seen      = set()
+    SKIP_BODY = _re.compile(
+        r"^Table of Contents"
+        r"|^\d+\s*\|\s*NYC DOE"
+        r"|^(As of |Last Updated|check this page)"
+        r"|^\d+$"
+        r"|^[•\-\*]"
     )
 
-    IEP_KEYWORDS = [
-        "referral", "consent", "evaluat", "eligib", "classif",
-        "iep", "meeting", "placement", "service", "goal", "annual",
-        "review", "reevaluat", "amend", "right", "notice", "transition",
-        "behavior", "discipline", "transport", "preschool", "surrogate",
-        "mediat", "complaint", "due process", "record", "section",
-        "overview", "introduction", "general information", "terms",
-        "least restrict", "lre", "fape", "idea", "procedural",
-        "social histor", "assistive", "extended school", "paraprofessional",
-    ]
-
-    for page_num, text in pages.items():
-        lines = text.split("\n")
+    for page_num in sorted(pages.keys()):
+        if page_num <= 5:
+            continue   # skip TOC pages themselves
+        lines = pages[page_num].split("\n")
         n     = len(lines)
 
-        for i, raw_line in enumerate(lines):
-            line = raw_line.strip()
-            if not line or len(line) < 5 or len(line) > 85:
+        for i, raw in enumerate(lines):
+            s  = raw.strip()
+            if not s or len(s) < 5 or len(s) > 85:
                 continue
-            if SKIP.search(line):
-                continue
-            alpha_ratio = sum(c.isalpha() for c in line) / len(line)
-            if alpha_ratio < 0.5:
+            if SKIP_BODY.search(s):
                 continue
 
-            ll         = line.lower()
-            is_heading = False
-            confidence = 0
+            sl    = s.lower().strip()
+            conf  = 0
 
-            if ALL_CAPS.match(line):
-                is_heading, confidence = True, 90
-            elif NUMBERED.match(line):
-                is_heading, confidence = True, 85
-            elif ENDS_COLON.match(line):
-                is_heading, confidence = True, 75
-            elif PAGE_HDR.match(line):
-                is_heading, confidence = True, 60
-            elif 6 <= len(line) <= 75:
-                prev_blank = (i == 0) or (lines[i-1].strip() == '')
-                next_blank = (i >= n-1) or (lines[i+1].strip() == '')
-                if prev_blank and next_blank:
-                    is_heading, confidence = True, 55
-            elif TITLE_CASE.match(line) and len(line.split()) >= 2:
-                is_heading, confidence = True, 50
+            # Priority 1: exact TOC match
+            if sl in toc_entries:
+                conf = 90
 
-            if not is_heading:
+            # Priority 2: ALL CAPS (e.g. RECOMMENDED SPECIAL EDUCATION...)
+            elif s.isupper() and len(s) >= 6:
+                conf = 80
+
+            # Priority 3: short line with high surrounding ratio
+            elif 8 <= len(s) <= 60:
+                bad_ends = ('.', ',', ';', ')', ':', 'and', 'or', 'the')
+                is_clean = (
+                    s[0].isupper()
+                    and not any(s.endswith(e) for e in bad_ends)
+                    and len(s.split()) >= 2
+                )
+                if is_clean:
+                    prev_lens = [len(lines[j].strip()) for j in range(max(0,i-2),i)
+                                 if lines[j].strip()]
+                    next_lens = [len(lines[j].strip()) for j in range(i+1,min(n,i+3))
+                                 if lines[j].strip()]
+                    surround  = prev_lens + next_lens
+                    if surround:
+                        ratio = sum(surround) / len(surround) / max(1, len(s))
+                        alpha = sum(c.isalpha() for c in s) / len(s)
+                        if ratio >= 5.0 and alpha >= 0.70:
+                            conf = 60
+
+            if conf == 0:
                 continue
 
-            if any(kw in ll for kw in IEP_KEYWORDS):
-                confidence += 20
-
-            if confidence < 55:
-                continue
-
-            key = (page_num, ll[:40])
+            key = (page_num, sl[:40])
             if key in seen:
                 continue
             seen.add(key)
 
             headings.append({
                 "page":          page_num,
-                "heading":       line,
-                "heading_lower": ll,
-                "confidence":    confidence,
+                "heading":       s,
+                "heading_lower": sl,
+                "confidence":    conf,
             })
 
+    # Sort and keep best 2 headings per page
     headings.sort(key=lambda h: (h['page'], -h['confidence']))
-
     per_page: dict = defaultdict(list)
     for h in headings:
         per_page[h['page']].append(h)
     result = []
     for pg in sorted(per_page.keys()):
-        result.extend(per_page[pg][:3])
+        result.extend(per_page[pg][:2])
     return result
+
 
 
 def assign_category(text_lower: str) -> str:
