@@ -274,12 +274,21 @@ with right:
     </div>
     """, unsafe_allow_html=True)
 
+    # Reset input value when clear was clicked
+    if st.session_state.get("_clear_input"):
+        st.session_state["_clear_input"] = False
+        default_val = ""
+    else:
+        default_val = st.session_state.get("_query_val", "")
+
     query = st.text_input(
         "Your question",
+        value=default_val,
         placeholder="e.g. What happens after I sign the consent form?",
         label_visibility="collapsed",
         key="free_query",
     )
+    st.session_state["_query_val"] = query
 
     s1, s2 = st.columns([3, 1])
     with s1:
@@ -289,7 +298,7 @@ with right:
             st.session_state.search_results = []
             st.session_state.active_q       = ""
             st.session_state.history        = []
-            st.session_state.free_query     = ""
+            st.session_state["_clear_input"] = True
             st.rerun()
 
     if search_btn and query.strip():
