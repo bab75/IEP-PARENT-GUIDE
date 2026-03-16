@@ -176,7 +176,7 @@ with tab_rights:
                     if st.button(f"Find in my document", key=f"find_{right['title'][:15]}",
                                  use_container_width=True):
                         results = search_chunks(
-                            st.session_state.pdf_chunks, right["query"], top_k=2
+                            [], right["query"], top_k=2
                         )
                         st.session_state[f"right_result_{right['title'][:15]}"] = results
 
@@ -202,7 +202,7 @@ with tab_fromPDF:
         </div>
         """, unsafe_allow_html=True)
         rights_query = "parent rights procedural safeguards consent notice dispute"
-        results = search_chunks(st.session_state.pdf_chunks, rights_query, top_k=6)
+        results = search_chunks([], rights_query, top_k=6)
         if results:
             for i, r in enumerate(results, 1):
                 answer_card(r, "parent rights", i)
